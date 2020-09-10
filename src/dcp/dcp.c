@@ -622,7 +622,7 @@ int main(int argc, char** argv)
     /* connect to DAOS source pool if uuid is valid */
     if (mfu_src_file->type == DAOS) {
         /* if DAOS source pool uuid is valid, then set source file type to DAOS */
-        daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh); 
+        daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh, false);
     }
 
     int daos_rc = 0;
@@ -630,7 +630,7 @@ int main(int argc, char** argv)
         if (!same_pool) {
             /* if DAOS is the source and destination type, and containers are in different pools,
              * then connect to the second pool */
-            daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh); 
+            daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh, true); 
         } else {
             /* Containers are using the same pool uuid.
              * Make sure they are also using the same svc.
@@ -648,7 +648,7 @@ int main(int argc, char** argv)
             }
             
             /* open the container, creating if it doesn't exist */
-            daos_cont_create_open(rank, dst_cont_uuid, &src_poh, &dst_coh);
+            daos_cont_create_open(rank, dst_cont_uuid, &src_poh, &dst_coh, true);
         }
     }
 

@@ -132,16 +132,18 @@ void daos_connect(
   uuid_t pool_uuid,
   uuid_t cont_uuid,
   daos_handle_t* poh,
-  daos_handle_t* coh
+  daos_handle_t* coh,
+  bool create_cont
 );
 
-/* Create the container if it doesn't exist.
+/* Conditionally create the container if it doesn't exist.
  * Then open it */
 void daos_cont_create_open(
   int rank,
   uuid_t cont_uuid,
   daos_handle_t* poh,
-  daos_handle_t* coh
+  daos_handle_t* coh,
+  bool create_cont
 );
 #endif
 
