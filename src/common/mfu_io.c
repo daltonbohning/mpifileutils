@@ -199,7 +199,7 @@ int mfu_file_access(const char* path, int amode, mfu_file_t* mfu_file)
         int rc = mfu_access(path, amode);
         return rc;
     } else if (mfu_file->type == DAOS) {
-        int rc = daos_access(path, amode);
+        int rc = daos_access(path, amode, mfu_file);
         return rc;
     } else {
         MFU_ABORT(-1, "File type not known: %s type=%d",
@@ -227,11 +227,23 @@ retry:
     return rc;
 }
 
-int daos_access(const char* path, int amode)
+int daos_access(const char* path, int amode, mfu_file_t* mfu_file)
 {
 #ifdef DAOS_SUPPORT
-    /* noop becuase daos have an access call */
-    return 0;
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    dfs_obj_t *parent = NULL;
+    int rc = dfs_access(mfu_file->dfs, parent, name, amode);
+    if (rc) {
+        MFU_LOG(MFU_LOG_ERR, "dfs_access %s failed (%d %s)",
+                name, rc, strerror(rc));
+        errno = rc;
+        rc = -1;
+    }
+    return rc;
 #endif
 }
 
