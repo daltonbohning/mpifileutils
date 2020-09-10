@@ -134,30 +134,45 @@ void daos_connect(
             MFU_LOG(MFU_LOG_ERR, "Failed to connect to pool");
         }
         d_rank_list_free(svcl);
+    }
 
-        /* attempt to open the daos container */
+    /* broadcast pool handle from rank 0 */
+    daos_bcast_handle(rank, poh, poh, POOL_HANDLE);
+
+    /* open the container and broadcast handle from rank 0 */
+    daos_cont_create_open(rank, cont_uuid, poh, coh);
+}
+
+void daos_cont_create_open(
+    int rank,
+    uuid_t cont_uuid,
+    daos_handle_t* poh,
+    daos_handle_t* coh)
+{
+    int rc;
+
+    /* rank 0 will open it and broadcast the handle */
+    if (rank == 0) {
+        /* try to open it */
         daos_cont_info_t co_info;
         rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
 
         /* If NOEXIST we create it */
         if (rc != 0) {
-            /* create the container */
-            uuid_t cuuid;
-            rc = dfs_cont_create(*poh, cuuid, NULL, NULL, NULL);
+            rc = dfs_cont_create(*poh, cont_uuid, NULL, NULL, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to create DFS container");
             }
 
             /* try to open it again */
-            rc = daos_cont_open(*poh, cuuid, DAOS_COO_RW, coh, &co_info, NULL);
+            rc = daos_cont_open(*poh, cont_uuid, DAOS_COO_RW, coh, &co_info, NULL);
             if (rc != 0) {
                 MFU_LOG(MFU_LOG_ERR, "Failed to open DFS container");
             }
         }
     }
 
-    /* broadcast pool and container handles from rank 0 */
-    daos_bcast_handle(rank, poh, poh, POOL_HANDLE);
+    /* broadcast container handle from rank 0 */
     daos_bcast_handle(rank, coh, poh, CONT_HANDLE);
 }
 #endif

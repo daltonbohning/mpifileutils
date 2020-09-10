@@ -646,31 +646,9 @@ int main(int argc, char** argv)
                     return ERR_INVAL_ARG;
                 }
             }
-            if (rank == 0) {
-                /* create container in same pool */
-                daos_cont_info_t co_info;
-                rc = daos_cont_open(src_poh, dst_cont_uuid, DAOS_COO_RW, &dst_coh, &co_info, NULL);
-
-                /* If NOEXIST we create it */
-                if (rc != 0) {
-                    /* create the container */
-                    uuid_t cuuid;
-                    rc = dfs_cont_create(src_poh, cuuid, NULL, NULL, NULL);
-                    if (rc != 0) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to create DFS2 container");
-                    }
-
-                    /* try to open it again */
-                    rc = daos_cont_open(src_poh, cuuid, DAOS_COO_RW, &dst_coh, &co_info, NULL);
-                    if (rc != 0) {
-                        MFU_LOG(MFU_LOG_ERR, "Failed to open DFS2 container");
-                        daos_rc = 1;
-                    }
-                }
-            }
-
-            /* broadcast container handle from rank 0 */
-            daos_bcast_handle(rank, &dst_coh, &src_poh, CONT_HANDLE);
+            
+            /* open the container, creating if it doesn't exist */
+            daos_cont_create_open(rank, dst_cont_uuid, &src_poh, &dst_coh);
         }
     }
 
