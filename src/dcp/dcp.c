@@ -42,6 +42,14 @@ static int daos_check_required_args(
     bool have_src_svc   = src_svc != NULL;
     bool have_dst_svc   = dst_svc != NULL;
     bool have_prefix    = dfs_prefix != NULL;
+    
+    bool same_pool = false;
+    if (have_src_pool && have_dst_pool) {
+        if (uuid_compare(src_pool_uuid, dst_pool_uuid) == 0) {
+            same_pool = true;
+        }
+    }
+
     bool args_valid = true;
 
     if (have_src_cont && !have_src_pool) {
@@ -74,6 +82,18 @@ static int daos_check_required_args(
         }
         args_valid = false;
     }
+
+    /* Containers are using the same pool uuid.
+     * Make sure they are also using the same svc.
+     * This is unlikely to ever happen but we can print an error just in case. */
+    if (same_pool && have_src_svc && have_dst_svc) {
+        if (strcmp(dst_svc, src_svc) != 0) {
+            if (rank == 0) {
+                MFU_LOG(MFU_LOG_ERR, "Using same pool uuid with different svcl's");
+            }
+            args_valid = false;
+        }
+    }    
 
     if (!args_valid) {
         return ERR_INVAL_ARG;
@@ -275,9 +295,6 @@ int main(int argc, char** argv)
 
     /* for juggling multiple rc values */
     int tmp_rc = 0;
-
-    /* for reduction of rc values */
-    int all_rc = 0;
 
     /* initialize MPI */
     MPI_Init(&argc, &argv);
@@ -562,6 +579,12 @@ int main(int argc, char** argv)
     char** argpaths = (&argv[optind]);
 
 #ifdef DAOS_SUPPORT
+    /* Each process keeps track of whether
+     * it had any DAOS errors.
+     * Then, perform a reduction and exit if needed */
+    bool local_daos_error = false;
+    bool global_daos_error = false;
+
     /* If only the source or destination svc is
      * given, default the other */
     if (src_svc != NULL && dst_svc == NULL) {
@@ -571,7 +594,8 @@ int main(int argc, char** argv)
         src_svc = MFU_STRDUP(dst_svc);
     }
 
-    /* Make sure we have the required DAOS arguments (if any) */
+    /* Make sure we have the required DAOS arguments (if any).
+     * Safe to exit here, since all processes have the same values. */
     rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
             dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
     if (rc != 0) {
@@ -596,9 +620,7 @@ int main(int argc, char** argv)
         rc = daos_set_paths(rank, argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
                 dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
         if (rc != 0) {
-            mfu_finalize();
-            MPI_Finalize();
-            return rc;
+            local_daos_error = true;
         }
     }
 
@@ -606,9 +628,7 @@ int main(int argc, char** argv)
     rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
             dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
     if (rc != 0) {
-        mfu_finalize();
-        MPI_Finalize();
-        return rc;
+        local_daos_error = true;
     }
     
     /* check if DAOS source and destination containers are in the same pool */
@@ -625,28 +645,12 @@ int main(int argc, char** argv)
         daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh, false);
     }
 
-    int daos_rc = 0;
     if (mfu_dst_file->type == DAOS) {
         if (!same_pool) {
             /* if DAOS is the source and destination type, and containers are in different pools,
              * then connect to the second pool */
             daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh, true); 
         } else {
-            /* Containers are using the same pool uuid.
-             * Make sure they are also using the same svc.
-             * This is unlikely to ever happen but we can print an error just in case. 
-             * If the dst svc isn't supplied, it is assumed to be the same as the src svc. */
-            if (dst_svc != NULL && src_svc != NULL) {
-                if (strcmp(dst_svc, src_svc) != 0) {
-                    if (rank == 0) {
-                        MFU_LOG(MFU_LOG_ERR, "Using same pool uuid with different svcl's");
-                    }
-                    mfu_finalize();
-                    MPI_Finalize();
-                    return ERR_INVAL_ARG;
-                }
-            }
-            
             /* open the container, creating if it doesn't exist */
             daos_cont_create_open(rank, dst_cont_uuid, &src_poh, &dst_coh, true);
         }
@@ -657,7 +661,7 @@ int main(int argc, char** argv)
         rc = dfs_mount(src_poh, src_coh, O_RDWR, &dfs1);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS)");
-            daos_rc = 1;
+            local_daos_error = true;
         }
     }
 
@@ -670,14 +674,13 @@ int main(int argc, char** argv)
         }
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS)");
-            daos_rc = 1;
+            local_daos_error = true;
         }
     }
 
-    /* Exit if we have any DAOS errors.
-     * daos_rc is either 0 (good) or 1 (error) */
-    MPI_Allreduce(&daos_rc, &all_rc, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
-    if (all_rc != 0) {
+    /* Exit if any process had a daos error */
+    MPI_Allreduce(&local_daos_error, &global_daos_error, 1, MPI_C_BOOL, MPI_LOR, MPI_COMM_WORLD);
+    if (global_daos_error) {
         if (rank == 0) {
            MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors");
         }
