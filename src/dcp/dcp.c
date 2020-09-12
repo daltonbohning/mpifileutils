@@ -604,7 +604,7 @@ int main(int argc, char** argv)
     if (rc != 0) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS_INVAL_ARG));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
         }
         mfu_finalize();
         MPI_Finalize();
@@ -628,7 +628,7 @@ int main(int argc, char** argv)
                 dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS_INVAL_ARG));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
             local_daos_error = true;
         }
     }
@@ -639,7 +639,7 @@ int main(int argc, char** argv)
                 dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS_INVAL_ARG));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
             local_daos_error = true;
         }
     }
@@ -674,7 +674,7 @@ int main(int argc, char** argv)
         rc = dfs_mount(src_poh, src_coh, O_RDWR, &dfs1);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
             local_daos_error = true;
         }
     }
@@ -688,7 +688,7 @@ int main(int argc, char** argv)
         }
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
             local_daos_error = true;
         }
     }
@@ -698,7 +698,7 @@ int main(int argc, char** argv)
     if (global_daos_error) {
         if (rank == 0) {
            MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "
-                   MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
+                   MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS));
         }
         tmp_rc = daos_fini();
         mfu_finalize();
@@ -738,7 +738,7 @@ int main(int argc, char** argv)
     if (numpaths_src == 0) {
         if(rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_INVAL_ARG));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
         }
 
         mfu_param_path_free_all(numpaths, paths);
@@ -760,7 +760,7 @@ int main(int argc, char** argv)
     if (!valid) {
         if(rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run: "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_INVAL_ARG));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_INVAL_ARG));
         }
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
@@ -868,7 +868,7 @@ int main(int argc, char** argv)
     if (rc != 0) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "One or more errors were detected while copying: "
-                    MFU_ERRF, MFU_ERRP(MFU_ERR_DCP_COPY));
+                    MFU_ERRF, MFU_ERRP(-MFU_ERR_DCP_COPY));
         }
     }
 
