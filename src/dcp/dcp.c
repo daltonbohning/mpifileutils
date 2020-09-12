@@ -138,9 +138,6 @@ static int daos_set_paths(
     bool prefix_on_src = false;
     bool prefix_on_dst = false;
 
-    /* TODO: handle when not UNS, but check_prefix succeeds. */
-    /* TODO: handle when UNS but no src or dst svc supplied */
-
     /* find out if a dfs_prefix is being used,
      * if so, then that means that the container
      * is not being copied from the root of the
@@ -149,7 +146,8 @@ static int daos_set_paths(
         struct duns_attr_t dattr = {0};
         rc = duns_resolve_path(dfs_prefix, &dattr);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS UNS path");
+            MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS PREFIX UNS path");
+            return 1;
         }
 
         /* figure out if prefix is on dst or src for
@@ -169,7 +167,7 @@ static int daos_set_paths(
         }
 
         if (!prefix_on_src && !prefix_on_dst) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS prefix");
+            MFU_LOG(MFU_LOG_ERR, "DAOS prefix does not match source or destination");
             return 1;
         }
     }
@@ -183,8 +181,8 @@ static int daos_set_paths(
      *
      * For each of the source and destination,
      * if it is not using a prefix then assume
-     * is is a daos path for UNS. If resolve path
-     * doesn't succeed then set accordingly */
+     * it is a daos path for UNS. If resolve path
+     * doesn't succeed then it might be a POSIX path */
     if (!prefix_on_src) {
         struct duns_attr_t src_dattr = {0};
         int src_rc = duns_resolve_path(src_path, &src_dattr);
