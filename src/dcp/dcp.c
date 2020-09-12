@@ -33,7 +33,8 @@ int daos_check_required_args(
     uuid_t dst_cont_uuid,
     char* src_svc,
     char* dst_svc,
-    char* dfs_prefix)
+    char* dfs_prefix,
+    int* flag_daos_args)
 {
     bool have_src_pool  = daos_uuid_valid(src_pool_uuid);
     bool have_src_cont  = daos_uuid_valid(src_cont_uuid);
@@ -42,6 +43,17 @@ int daos_check_required_args(
     bool have_src_svc   = src_svc != NULL;
     bool have_dst_svc   = dst_svc != NULL;
     bool have_prefix    = dfs_prefix != NULL;
+
+    /* Determine whether any DAOS arguments are supplied. 
+     * If not, then there is nothing to check. */
+    *flag_daos_args = 0;
+    if (have_src_pool || have_src_cont || have_dst_pool || have_dst_cont
+            || have_src_svc || have_dst_svc || have_prefix) {
+        *flag_daos_args = 1;
+    }
+    else {
+        return 0;
+    } 
     
     bool same_pool = false;
     if (have_src_pool && have_dst_pool) {
@@ -582,12 +594,6 @@ int main(int argc, char** argv)
     char** argpaths = (&argv[optind]);
 
 #ifdef DAOS_SUPPORT
-    /* Each process keeps track of whether
-     * it had any DAOS errors.
-     * Then, perform a reduction and exit if needed */
-    bool local_daos_error = false;
-    bool global_daos_error = false;
-
     /* If only the source or destination svc is
      * given, default the other */
     if (src_svc != NULL && dst_svc == NULL) {
@@ -597,10 +603,18 @@ int main(int argc, char** argv)
         src_svc = MFU_STRDUP(dst_svc);
     }
 
+    /* Each process keeps track of whether it had any DAOS errors.
+     * If there weren't any daos args, then ignore daos_init errors.
+     * Then, perform a reduction and exit if any process errored. */
+    bool local_daos_error = false;
+    bool global_daos_error = false;
+    int flag_daos_args;
+
     /* Make sure we have the required DAOS arguments (if any).
      * Safe to exit here, since all processes have the same values. */
     rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
-            dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
+            dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix,
+            &flag_daos_args);
     if (rc != 0) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
@@ -611,19 +625,20 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    /* For now, track the error.
+     * Later, ignore if no daos args supplied */
     rc = daos_init();
-
-    /* TODO: Don't exit and fail if daos fails init,
-     * could just be regular paths */
     if (rc != 0) {
         MFU_LOG(MFU_LOG_ERR, "Failed to initialize daos");
+        local_daos_error = true;
     }
 
     /* Figure out if daos path is the src or dst,
      * using UNS path, then chop off UNS path
      * prefix since the path is mapped to the root
      * of the container in the DAOS DFS mount */
-    if (!daos_uuid_valid(src_pool_uuid) || !daos_uuid_valid(dst_pool_uuid)) {
+    if (!local_daos_error
+            && (!daos_uuid_valid(src_pool_uuid) || !daos_uuid_valid(dst_pool_uuid))) {
         rc = daos_set_paths(rank, argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
                 dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
         if (rc != 0) {
@@ -636,7 +651,8 @@ int main(int argc, char** argv)
     /* Re-check the required DAOS arguments (if any) */
     if (!local_daos_error) {
         rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
-                dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
+                dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix,
+                &flag_daos_args);
         if (rc != 0) {
             MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
                     MFU_ERRF, MFU_ERRP(-MFU_ERR_DAOS_INVAL_ARG));
@@ -693,7 +709,11 @@ int main(int argc, char** argv)
         }
     }
 
-    /* Exit if any process had a daos error */
+    /* Exit if any process had a daos error,
+     * but ignore if no daos args were supplied. */
+    if (flag_daos_args == 0) {
+        local_daos_error = false;
+    }
     MPI_Allreduce(&local_daos_error, &global_daos_error, 1, MPI_C_BOOL, MPI_LOR, MPI_COMM_WORLD);
     if (global_daos_error) {
         if (rank == 0) {
