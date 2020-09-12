@@ -126,23 +126,14 @@ void daos_bcast_handle(
 );
 
 /* connect to DAOS pool, and then open container */
-void daos_connect(
+int daos_connect(
   int rank,
   const char* svc,
   uuid_t pool_uuid,
   uuid_t cont_uuid,
   daos_handle_t* poh,
   daos_handle_t* coh,
-  bool create_cont
-);
-
-/* Conditionally create the container if it doesn't exist.
- * Then open it */
-void daos_cont_create_open(
-  int rank,
-  uuid_t cont_uuid,
-  daos_handle_t* poh,
-  daos_handle_t* coh,
+  bool connect_pool,
   bool create_cont
 );
 #endif

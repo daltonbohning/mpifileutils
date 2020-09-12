@@ -690,18 +690,26 @@ int main(int argc, char** argv)
 
     /* connect to DAOS source pool if uuid is valid */
     if (!local_daos_error && mfu_src_file->type == DAOS) {
-        /* if DAOS source pool uuid is valid, then set source file type to DAOS */
-        daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh, false);
+        /* Open pool connection, but do not create container if non-existent */
+        rc = daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh, true, false);
+        if (rc != 0) {
+            local_daos_error = true;
+        }
     }
 
-    /* If the DAOS source and destination are in different pools,
-     * then connect to the second pool.
-     * Otherwise, open the container in the first pool. */
+    /* If the source and destination are in the same pool,
+     * then open the container in that pool.
+     * Otherwise, connect to the second pool and open the container */
     if (!local_daos_error && mfu_dst_file->type == DAOS) {
-        if (!same_pool) {
-            daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh, true); 
+        if (same_pool) {
+            /* Don't reconnect to pool, but do create container if non-existent */
+            rc = daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &src_poh, &dst_coh, false, true);
         } else {
-            daos_cont_create_open(rank, dst_cont_uuid, &src_poh, &dst_coh, true);
+            /* Open pool connection, and create container if non-existent */
+            rc = daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh, true, true); 
+        }
+        if (rc != 0) {
+            local_daos_error = true;
         }
     }
 
