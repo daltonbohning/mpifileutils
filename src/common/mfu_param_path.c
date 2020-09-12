@@ -424,9 +424,9 @@ void mfu_param_path_check_copy(uint64_t num, const mfu_param_path* paths,
         if (mfu_src_file->type == DAOS || mfu_dst_file->type == DAOS) {
             if (num != 1) {
                 MFU_LOG(MFU_LOG_ERR, "Only one source can be specified when using DAOS");
+                valid = 0;
+                goto bcast;
             }
-            valid = 0;
-            goto bcast;
         }
         
         /* count number of readable source paths */
