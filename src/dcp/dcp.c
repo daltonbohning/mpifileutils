@@ -25,8 +25,9 @@
 #include "mfu_errors.h"
 
 #ifdef DAOS_SUPPORT
-int daos_check_required_args(
+int daos_check_args(
     int rank,
+    char** argpaths,
     uuid_t src_pool_uuid,
     uuid_t src_cont_uuid,
     uuid_t dst_pool_uuid,
@@ -36,6 +37,11 @@ int daos_check_required_args(
     char* dfs_prefix,
     int* flag_daos_args)
 {
+    char* src_path = argpaths[0];
+    char* dst_path = argpaths[1];
+
+    bool have_src_path  = src_path != NULL;
+    bool have_dst_path  = dst_path != NULL;
     bool have_src_pool  = daos_uuid_valid(src_pool_uuid);
     bool have_src_cont  = daos_uuid_valid(src_cont_uuid);
     bool have_dst_pool  = daos_uuid_valid(dst_pool_uuid);
@@ -56,9 +62,13 @@ int daos_check_required_args(
     } 
     
     bool same_pool = false;
-    if (have_src_pool && have_dst_pool) {
-        if (uuid_compare(src_pool_uuid, dst_pool_uuid) == 0) {
-            same_pool = true;
+    bool same_cont = false;
+    if (have_src_pool && have_dst_pool 
+            && uuid_compare(src_pool_uuid, dst_pool_uuid) == 0) {
+        same_pool = true;
+        if (have_src_cont && have_dst_cont
+                && uuid_compare(src_cont_uuid, dst_cont_uuid) == 0) {
+            same_cont = true;
         }
     }
 
@@ -111,7 +121,17 @@ int daos_check_required_args(
             }
         rc = 1;
         }
-    }    
+    }
+
+    /* Make sure the source and destination are different */
+    if (same_cont && have_src_path && have_dst_path) {
+        if (strcmp(src_path, dst_path) == 0) {
+            if (rank == 0) {
+                 MFU_LOG(MFU_LOG_ERR, "DAOS source is DAOS destination");
+            }
+        rc = 1;
+        }
+    }
 
     return rc;
 }
@@ -612,7 +632,7 @@ int main(int argc, char** argv)
 
     /* Make sure we have the required DAOS arguments (if any).
      * Safe to exit here, since all processes have the same values. */
-    rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
+    rc = daos_check_args(rank, argpaths, src_pool_uuid, src_cont_uuid,
             dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix,
             &flag_daos_args);
     if (rc != 0) {
@@ -650,7 +670,7 @@ int main(int argc, char** argv)
 
     /* Re-check the required DAOS arguments (if any) */
     if (!local_daos_error) {
-        rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
+        rc = daos_check_args(rank, argpaths, src_pool_uuid, src_cont_uuid,
                 dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix,
                 &flag_daos_args);
         if (rc != 0) {
@@ -774,7 +794,7 @@ int main(int argc, char** argv)
     /* Parse the source and destination paths. */
     int valid, copy_into_dir;
     mfu_param_path_check_copy(numpaths_src, paths, destpath, mfu_src_file, mfu_dst_file, &valid, &copy_into_dir);
-    mfu_copy_opts->copy_into_dir = copy_into_dir; 
+    mfu_copy_opts->copy_into_dir = copy_into_dir;
 
     /* exit job if we found a problem */
     if (!valid) {
