@@ -25,7 +25,7 @@
 #include "mfu_errors.h"
 
 #ifdef DAOS_SUPPORT
-static int daos_check_required_args(
+int daos_check_required_args(
     int rank,
     uuid_t src_pool_uuid,
     uuid_t src_cont_uuid,
@@ -50,37 +50,43 @@ static int daos_check_required_args(
         }
     }
 
-    bool args_valid = true;
+    int rc = 0;
 
     if (have_src_cont && !have_src_pool) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Source container requires source pool");
         }
-        args_valid = false;
+        rc = 1;
     }
     if (have_src_pool && !have_src_cont) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Source pool requires source container");
         }
-        args_valid = false;
+        rc = 1;
     }
     if (have_src_pool && !have_src_svc) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Source pool requires source svcl");
         }
-        args_valid = false;
+        rc = 1;
     }
     if (have_dst_cont && !have_dst_pool) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Destination container requires destination pool");
         }
-        args_valid = false;
+        rc = 1;
+    }
+    if (have_dst_pool && !have_dst_svc) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Destination pool requires destination svcl");
+        }
+        rc = 1;
     }
     if (have_prefix && !have_src_svc && !have_dst_svc) {
         if (rank == 0) {
             MFU_LOG(MFU_LOG_ERR, "Prefix requires source or destination svcl");
         }
-        args_valid = false;
+        rc = 1;
     }
 
     /* Containers are using the same pool uuid.
@@ -91,15 +97,11 @@ static int daos_check_required_args(
             if (rank == 0) {
                 MFU_LOG(MFU_LOG_ERR, "Using same pool uuid with different svcl's");
             }
-            args_valid = false;
+        rc = 1;
         }
     }    
 
-    if (!args_valid) {
-        return ERR_INVAL_ARG;
-    }
-
-    return 0;
+    return rc;
 }
 
 static bool daos_check_prefix(char* path, const char* dfs_prefix) 
@@ -167,10 +169,8 @@ static int daos_set_paths(
         }
 
         if (!prefix_on_src && !prefix_on_dst) {
-            if (rank == 0) {
-                MFU_LOG(MFU_LOG_ERR, "Invalid DAOS prefix");
-            }
-            return ERR_DAOS_INVAL_PRFX;
+            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS prefix");
+            return 1;
         }
     }
 
@@ -358,6 +358,7 @@ int main(int argc, char** argv)
         {"daos-dst-cont"        , required_argument, 0, 'Y'},
         {"daos-src-svcl"        , required_argument, 0, 'z'},
         {"daos-dst-svcl"        , required_argument, 0, 'Z'},
+        {"daos-svcl"        , required_argument, 0, 'a'},
         {"daos-prefix"          , required_argument, 0, 'X'},
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
@@ -493,6 +494,10 @@ int main(int argc, char** argv)
             case 'Z':
                 dst_svc = MFU_STRDUP(optarg);
                 break;
+            case 'a':
+                src_svc = MFU_STRDUP(optarg);
+                dst_svc = MFU_STRDUP(optarg);
+                break;
             case 'X':
                 dfs_prefix = MFU_STRDUP(optarg);
                 break;
@@ -599,9 +604,13 @@ int main(int argc, char** argv)
     rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
             dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
     if (rc != 0) {
+        if (rank == 0) {
+            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS_INVAL_ARG));
+        }
         mfu_finalize();
         MPI_Finalize();
-        return rc;
+        return 1;
     }
 
     rc = daos_init();
@@ -620,15 +629,21 @@ int main(int argc, char** argv)
         rc = daos_set_paths(rank, argpaths, dfs_prefix, src_pool_uuid, src_cont_uuid,
                 dst_pool_uuid, dst_cont_uuid, mfu_src_file, mfu_dst_file);
         if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS_INVAL_ARG));
             local_daos_error = true;
         }
     }
 
     /* Re-check the required DAOS arguments (if any) */
-    rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
-            dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
-    if (rc != 0) {
-        local_daos_error = true;
+    if (!local_daos_error) {
+        rc = daos_check_required_args(rank, src_pool_uuid, src_cont_uuid,
+                dst_pool_uuid, dst_cont_uuid, src_svc, dst_svc, dfs_prefix);
+        if (rc != 0) {
+            MFU_LOG(MFU_LOG_ERR, "Invalid DAOS args: "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS_INVAL_ARG));
+            local_daos_error = true;
+        }
     }
     
     /* check if DAOS source and destination containers are in the same pool */
@@ -637,35 +652,36 @@ int main(int argc, char** argv)
         if (uuid_compare(src_pool_uuid, dst_pool_uuid) == 0) {
             same_pool = true;
         }
-    } 
+    }
 
     /* connect to DAOS source pool if uuid is valid */
-    if (mfu_src_file->type == DAOS) {
+    if (!local_daos_error && mfu_src_file->type == DAOS) {
         /* if DAOS source pool uuid is valid, then set source file type to DAOS */
         daos_connect(rank, src_svc, src_pool_uuid, src_cont_uuid, &src_poh, &src_coh, false);
     }
 
-    if (mfu_dst_file->type == DAOS) {
+    /* If the DAOS source and destination are in different pools,
+     * then connect to the second pool.
+     * Otherwise, open the container in the first pool. */
+    if (!local_daos_error && mfu_dst_file->type == DAOS) {
         if (!same_pool) {
-            /* if DAOS is the source and destination type, and containers are in different pools,
-             * then connect to the second pool */
             daos_connect(rank, dst_svc, dst_pool_uuid, dst_cont_uuid, &dst_poh, &dst_coh, true); 
         } else {
-            /* open the container, creating if it doesn't exist */
             daos_cont_create_open(rank, dst_cont_uuid, &src_poh, &dst_coh, true);
         }
     }
 
-    if (mfu_src_file->type == DAOS) {
+    if (!local_daos_error && mfu_src_file->type == DAOS) {
         /* DFS is mounted for the source container */
         rc = dfs_mount(src_poh, src_coh, O_RDWR, &dfs1);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS)");
+            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
             local_daos_error = true;
         }
     }
 
-    if (mfu_dst_file->type == DAOS) {
+    if (!local_daos_error && mfu_dst_file->type == DAOS) {
         /* DFS is mounted for the destination container */
         if (same_pool) {
             rc = dfs_mount(src_poh, dst_coh, O_RDWR, &dfs2);
@@ -673,7 +689,8 @@ int main(int argc, char** argv)
             rc = dfs_mount(dst_poh, dst_coh, O_RDWR, &dfs2);
         }
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS)");
+            MFU_LOG(MFU_LOG_ERR, "Failed to mount DAOS filesystem (DFS): "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
             local_daos_error = true;
         }
     }
@@ -682,12 +699,13 @@ int main(int argc, char** argv)
     MPI_Allreduce(&local_daos_error, &global_daos_error, 1, MPI_C_BOOL, MPI_LOR, MPI_COMM_WORLD);
     if (global_daos_error) {
         if (rank == 0) {
-           MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors");
+           MFU_LOG(MFU_LOG_ERR, "Detected one or more DAOS errors: "
+                   MFU_ERRF, MFU_ERRP(MFU_ERR_DAOS));
         }
         tmp_rc = daos_fini();
         mfu_finalize();
         MPI_Finalize();
-        return ERR_DAOS;
+        return 1;
     }
 
     /* set source and destination files to address of their
@@ -721,14 +739,15 @@ int main(int argc, char** argv)
 
     if (numpaths_src == 0) {
         if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed");
+            MFU_LOG(MFU_LOG_ERR, "A source and destination path is needed: "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_INVAL_ARG));
         }
 
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
         mfu_finalize();
         MPI_Finalize();
-        return ERR_INVAL_ARG;
+        return 1;
     }
 
     /* last item in the list is the destination path */
@@ -742,13 +761,14 @@ int main(int argc, char** argv)
     /* exit job if we found a problem */
     if (!valid) {
         if(rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run.\n");
+            MFU_LOG(MFU_LOG_ERR, "Invalid src/dest paths provided. Exiting run: "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_INVAL_ARG));
         }
         mfu_param_path_free_all(numpaths, paths);
         mfu_free(&paths);
         mfu_finalize();
         MPI_Finalize();
-        return ERR_INVAL_ARG;
+        return 1;
     }
 
     /* create an empty file list */
@@ -776,7 +796,7 @@ int main(int argc, char** argv)
                             mfu_dst_file);
     if (tmp_rc < 0) {
         /* hit some sort of error during copy */
-        rc = ERR_DCP_COPY;
+        rc = 1;
     }
 
     /* free the file list */
@@ -849,7 +869,8 @@ int main(int argc, char** argv)
     /* Alert the user if there were copy errors */
     if (rc != 0) {
         if (rank == 0) {
-            MFU_LOG(MFU_LOG_ERR, "One or more errors were detected while copying");
+            MFU_LOG(MFU_LOG_ERR, "One or more errors were detected while copying: "
+                    MFU_ERRF, MFU_ERRP(MFU_ERR_DCP_COPY));
         }
     }
 
@@ -863,5 +884,8 @@ int main(int argc, char** argv)
     /* shut down MPI */
     MPI_Finalize();
 
-    return rc;
+    if (rc != 0) {
+        return 1;
+    }
+    return 0;
 }
