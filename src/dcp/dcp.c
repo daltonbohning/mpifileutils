@@ -178,7 +178,7 @@ static int daos_set_paths(
         struct duns_attr_t dattr = {0};
         rc = duns_resolve_path(dfs_prefix, &dattr);
         if (rc != 0) {
-            MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS PREFIX UNS path");
+            MFU_LOG(MFU_LOG_ERR, "Failed to resolve DAOS Prefix UNS path");
             return 1;
         }
 
