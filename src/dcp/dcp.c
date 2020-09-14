@@ -388,7 +388,6 @@ int main(int argc, char** argv)
         {"daos-dst-cont"        , required_argument, 0, 'Y'},
         {"daos-src-svcl"        , required_argument, 0, 'z'},
         {"daos-dst-svcl"        , required_argument, 0, 'Z'},
-        {"daos-svcl"        , required_argument, 0, 'a'},
         {"daos-prefix"          , required_argument, 0, 'X'},
         {"input"                , required_argument, 0, 'i'},
         {"chunksize"            , required_argument, 0, 'k'},
@@ -522,10 +521,6 @@ int main(int argc, char** argv)
                 src_svc = MFU_STRDUP(optarg);
                 break;
             case 'Z':
-                dst_svc = MFU_STRDUP(optarg);
-                break;
-            case 'a':
-                src_svc = MFU_STRDUP(optarg);
                 dst_svc = MFU_STRDUP(optarg);
                 break;
             case 'X':
