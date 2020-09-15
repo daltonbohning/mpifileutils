@@ -1069,8 +1069,8 @@ int daos_mkdir(const char* dir, mode_t mode, mfu_file_t* mfu_file) {
     dfs_obj_t* parent = NULL;
     int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
 
-    /* only call mkdir if the dir_name is not the root DFS directory */
-    if (strcmp(dir_name, "/") != 0) {
+    /* only call mkdir if name is not the root DFS directory */
+    if (name && strcmp(name, "/") != 0) {
         rc = dfs_mkdir(mfu_file->dfs, parent, name, mode, 0);
     }
 
