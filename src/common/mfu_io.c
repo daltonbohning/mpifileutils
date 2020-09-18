@@ -449,10 +449,48 @@ retry:
     return rc;
 }
 
-/* use a noop, daos does not have a mknod function */
 int daos_mknod(const char* path, mode_t mode, dev_t dev, mfu_file_t* mfu_file)
 {
-    return 0;
+#ifdef DAOS_SUPPORT
+    char* name     = NULL;
+    char* dir_name = NULL;
+    parse_filename(path, &name, &dir_name);
+    assert(dir_name);
+
+    dfs_obj_t* parent = NULL;
+    int rc = dfs_lookup(mfu_file->dfs, dir_name, O_RDWR, &parent, NULL, NULL);
+    if (parent != NULL) {
+        /* create regular file */
+        rc = dfs_open(mfu_file->dfs, parent, name,
+                      S_IFREG | mode, O_CREAT,
+                      0, 0, NULL, &(mfu_file->obj));
+        if (rc) {
+            MFU_LOG(MFU_LOG_ERR, "dfs_open %s failed (%d %s)",
+                    name, rc, strerror(rc));
+            errno = rc;
+            rc = -1;
+        }
+        else {
+            /* close the file */
+            rc = dfs_release(mfu_file->obj);
+            if (rc) {
+                MFU_LOG(MFU_LOG_ERR, "dfs_close %s failed (%d %s)",
+                        path, rc, strerror(rc));
+                errno = rc;
+                rc = -1;
+            }
+        }
+    } else {
+        MFU_LOG(MFU_LOG_ERR, "dfs_lookup %s failed", dir_name);
+        errno = ENOENT;
+        rc = -1;
+    }
+
+    mfu_free(&name);
+    mfu_free(&dir_name);
+
+    return rc;
+#endif
 }
 
 int mfu_mknod(const char* path, mode_t mode, dev_t dev)
